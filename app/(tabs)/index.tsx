@@ -1,5 +1,6 @@
 import { Link } from "expo-router";
 import type { Href } from "expo-router";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import {
   Activity,
@@ -21,8 +22,26 @@ import {
   mockScan,
   mockSite,
 } from "../../src/data/mockData";
+import {
+  CurrentNetworkInfo,
+  getCurrentNetworkInfo,
+} from "../../src/services/networkInfo";
 
 export default function HomeScreen() {
+  const [networkInfo, setNetworkInfo] = useState<CurrentNetworkInfo | null>(null);
+
+  useEffect(() => {
+    getCurrentNetworkInfo()
+      .then(setNetworkInfo)
+      .catch(() => {
+        setNetworkInfo({
+          ipAddress: null,
+          isConnected: null,
+          type: null,
+        });
+      });
+  }, []);
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <View style={styles.headerCard}>
@@ -33,8 +52,8 @@ export default function HomeScreen() {
         </Text>
 
         <View style={styles.grid}>
-          <Metric label="Subnet" value={mockScan.subnet} />
-          <Metric label="Gateway" value={mockScan.gatewayIp} />
+          <Metric label="Network" value={networkInfo?.type || "Detecting..."} />
+          <Metric label="Phone IP" value={networkInfo?.ipAddress || "Detecting..."} />
           <Metric label="Devices" value={String(mockDevices.length)} />
           <Metric label="Risks" value={String(mockRisks.length)} />
         </View>
