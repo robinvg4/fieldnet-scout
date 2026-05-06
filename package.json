@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "scripts": {
     "start": "expo start",
-    "agent": "node scripts/scan-agent-advanced.js",
+    "agent": "node scripts/scan-agent-vendor.js",
+    "agent:advanced": "node scripts/scan-agent-advanced.js",
     "agent:legacy": "node scripts/scan-agent.js",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
