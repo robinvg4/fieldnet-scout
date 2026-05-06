@@ -1,98 +1,203 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { Link } from "expo-router";
+import {
+  Activity,
+  Archive,
+  Network,
+  ShieldAlert,
+  Wrench,
+} from "lucide-react-native";
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import {
+  mockDevices,
+  mockRisks,
+  mockScan,
+  mockSite,
+} from "../src/data/mockData";
 
 export default function HomeScreen() {
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      <View style={styles.headerCard}>
+        <Text style={styles.eyebrow}>Current network</Text>
+        <Text style={styles.title}>{mockScan.networkName}</Text>
+        <Text style={styles.subtitle}>
+          {mockSite.clientName} · {mockSite.siteName}
+        </Text>
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+        <View style={styles.grid}>
+          <Metric label="Subnet" value={mockScan.subnet} />
+          <Metric label="Gateway" value={mockScan.gatewayIp} />
+          <Metric label="Devices" value={String(mockDevices.length)} />
+          <Metric label="Risks" value={String(mockRisks.length)} />
+        </View>
+
+        <Link href="/(tabs)/scan" asChild>
+          <TouchableOpacity style={styles.primaryButton}>
+            <Activity color="#fff" size={20} />
+            <Text style={styles.primaryButtonText}>Start Standard Scan</Text>
+          </TouchableOpacity>
+        </Link>
+      </View>
+
+      <View style={styles.navGrid}>
+        <NavCard
+          href="/devices"
+          icon={<Network color="#93c5fd" />}
+          title="Devices"
+          subtitle="Inventory and services"
+        />
+        <NavCard
+          href="/risks"
+          icon={<ShieldAlert color="#fca5a5" />}
+          title="Risks"
+          subtitle="Findings and actions"
+        />
+        <NavCard
+          href="/tools"
+          icon={<Wrench color="#c4b5fd" />}
+          title="Tools"
+          subtitle="Ping, DNS, traceroute"
+        />
+        <NavCard
+          href="/sites"
+          icon={<Archive color="#86efac" />}
+          title="Sites"
+          subtitle="Client profiles"
+        />
+      </View>
+    </ScrollView>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.metric}>
+      <Text style={styles.metricLabel}>{label}</Text>
+      <Text style={styles.metricValue}>{value}</Text>
+    </View>
+  );
+}
+
+function NavCard({
+  href,
+  icon,
+  title,
+  subtitle,
+}: {
+  href: string;
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <Link href={href} asChild>
+      <TouchableOpacity style={styles.navCard}>
+        {icon}
+        <Text style={styles.navTitle}>{title}</Text>
+        <Text style={styles.navSubtitle}>{subtitle}</Text>
+      </TouchableOpacity>
+    </Link>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  screen: {
+    flex: 1,
+    backgroundColor: "#020617",
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  content: {
+    padding: 16,
+    gap: 16,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  headerCard: {
+    backgroundColor: "#0f172a",
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "#1e293b",
+  },
+  eyebrow: {
+    color: "#64748b",
+    textTransform: "uppercase",
+    letterSpacing: 2,
+    fontSize: 12,
+    marginBottom: 6,
+  },
+  title: {
+    color: "#f8fafc",
+    fontSize: 30,
+    fontWeight: "800",
+  },
+  subtitle: {
+    color: "#94a3b8",
+    marginTop: 4,
+  },
+  grid: {
+    marginTop: 18,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  metric: {
+    width: "48%",
+    backgroundColor: "#020617",
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#1e293b",
+  },
+  metricLabel: {
+    color: "#64748b",
+    fontSize: 12,
+  },
+  metricValue: {
+    color: "#f8fafc",
+    fontWeight: "700",
+    marginTop: 4,
+  },
+  primaryButton: {
+    marginTop: 18,
+    height: 54,
+    backgroundColor: "#2563eb",
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  primaryButtonText: {
+    color: "#fff",
+    fontWeight: "800",
+    fontSize: 16,
+  },
+  navGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  navCard: {
+    width: "48%",
+    backgroundColor: "#0f172a",
+    borderRadius: 22,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#1e293b",
+  },
+  navTitle: {
+    color: "#f8fafc",
+    fontWeight: "800",
+    fontSize: 16,
+    marginTop: 12,
+  },
+  navSubtitle: {
+    color: "#94a3b8",
+    marginTop: 4,
+    fontSize: 12,
   },
 });

@@ -1,35 +1,25 @@
-import { Tabs } from 'expo-router';
-import React from 'react';
+import { Stack } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
+export default function RootLayout() {
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        headerShown: false,
-        tabBarButton: HapticTab,
-      }}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+    <>
+      <StatusBar style="light" />
+      <Stack
+        screenOptions={{
+          headerStyle: { backgroundColor: "#020617" },
+          headerTintColor: "#f8fafc",
+          headerTitleStyle: { fontWeight: "700" },
+          contentStyle: { backgroundColor: "#020617" },
         }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
-        }}
-      />
-    </Tabs>
+      >
+        <Stack.Screen name="index" options={{ title: "FieldNet Scout" }} />
+        <Stack.Screen name="scan" options={{ title: "Scan" }} />
+        <Stack.Screen name="devices" options={{ title: "Devices" }} />
+        <Stack.Screen name="risks" options={{ title: "Risks" }} />
+        <Stack.Screen name="tools" options={{ title: "Tools" }} />
+        <Stack.Screen name="sites" options={{ title: "Sites" }} />
+      </Stack>
+    </>
   );
 }
