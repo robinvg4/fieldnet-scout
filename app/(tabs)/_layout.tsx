@@ -5,57 +5,65 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerStyle: { backgroundColor: "#020617" },
+        headerStyle: { backgroundColor: "#030712" },
         headerTintColor: "#f8fafc",
-        headerTitleStyle: { fontWeight: "700" },
+        headerShadowVisible: false,
+        headerTitleStyle: { fontWeight: "900", fontSize: 20 },
         tabBarStyle: {
-          backgroundColor: "#020617",
+          backgroundColor: "#030712",
           borderTopColor: "#1e293b",
+          height: 76,
+          paddingTop: 8,
+          paddingBottom: 12,
         },
-        tabBarActiveTintColor: "#38bdf8",
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: "800",
+        },
+        tabBarActiveTintColor: "#22d3ee",
         tabBarInactiveTintColor: "#64748b",
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: "Scan",
-          tabBarIcon: ({ color }) => <Activity color={color} size={22} />,
+          title: "Command",
+          tabBarIcon: ({ color }) => <Activity color={color} size={23} />,
         }}
       />
       <Tabs.Screen
         name="scan"
         options={{
           title: "Run Scan",
-          tabBarIcon: ({ color }) => <Activity color={color} size={22} />,
+          tabBarIcon: ({ color }) => <Activity color={color} size={23} />,
         }}
       />
       <Tabs.Screen
         name="devices"
         options={{
           title: "Devices",
-          tabBarIcon: ({ color }) => <Network color={color} size={22} />,
+          tabBarIcon: ({ color }) => <Network color={color} size={23} />,
         }}
       />
       <Tabs.Screen
         name="risks"
         options={{
           title: "Risks",
-          tabBarIcon: ({ color }) => <ShieldAlert color={color} size={22} />,
+          tabBarIcon: ({ color }) => <ShieldAlert color={color} size={23} />,
         }}
       />
       <Tabs.Screen
         name="tools"
         options={{
           title: "Tools",
-          tabBarIcon: ({ color }) => <Wrench color={color} size={22} />,
+          tabBarIcon: ({ color }) => <Wrench color={color} size={23} />,
         }}
       />
       <Tabs.Screen
         name="sites"
         options={{
-          title: "Sites",
-          tabBarIcon: ({ color }) => <Archive color={color} size={22} />,
+          title: "Reports",
+          tabBarIcon: ({ color }) => <Archive color={color} size={23} />,
         }}
       />
       <Tabs.Screen name="explore" options={{ href: null }} />
