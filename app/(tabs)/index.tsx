@@ -17,18 +17,20 @@ import {
   View,
 } from "react-native";
 import {
-  mockDevices,
-  mockRisks,
-  mockScan,
-  mockSite,
-} from "../../src/data/mockData";
-import {
   CurrentNetworkInfo,
   getCurrentNetworkInfo,
 } from "../../src/services/networkInfo";
+import {
+  CurrentScanState,
+  getCurrentScanState,
+  subscribeToScanState,
+} from "../../src/state/scanStore";
 
 export default function HomeScreen() {
   const [networkInfo, setNetworkInfo] = useState<CurrentNetworkInfo | null>(null);
+  const [scanState, setScanState] = useState<CurrentScanState>(getCurrentScanState());
+
+  useEffect(() => subscribeToScanState(setScanState), []);
 
   useEffect(() => {
     getCurrentNetworkInfo()
@@ -46,22 +48,24 @@ export default function HomeScreen() {
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <View style={styles.headerCard}>
         <Text style={styles.eyebrow}>Current network</Text>
-        <Text style={styles.title}>{mockScan.networkName}</Text>
+        <Text style={styles.title}>{networkInfo?.type || "Detecting..."}</Text>
         <Text style={styles.subtitle}>
-          {mockSite.clientName} · {mockSite.siteName}
+          {networkInfo?.ipAddress
+            ? `Phone IP: ${networkInfo.ipAddress}`
+            : "Connect to Wi-Fi and run a real scan."}
         </Text>
 
         <View style={styles.grid}>
-          <Metric label="Network" value={networkInfo?.type || "Detecting..."} />
+          <Metric label="Connection" value={networkInfo?.isConnected === false ? "Offline" : "Online"} />
           <Metric label="Phone IP" value={networkInfo?.ipAddress || "Detecting..."} />
-          <Metric label="Devices" value={String(mockDevices.length)} />
-          <Metric label="Risks" value={String(mockRisks.length)} />
+          <Metric label="Devices" value={String(scanState.devices.length)} />
+          <Metric label="Risks" value={String(scanState.risks.length)} />
         </View>
 
         <Link href="/(tabs)/scan" asChild>
           <TouchableOpacity style={styles.primaryButton}>
             <Activity color="#fff" size={20} />
-            <Text style={styles.primaryButtonText}>Start Standard Scan</Text>
+            <Text style={styles.primaryButtonText}>Run Real Scan</Text>
           </TouchableOpacity>
         </Link>
       </View>
@@ -71,13 +75,13 @@ export default function HomeScreen() {
           href="/(tabs)/devices"
           icon={<Network color="#93c5fd" />}
           title="Devices"
-          subtitle="Inventory and services"
+          subtitle="Real scan results"
         />
         <NavCard
           href="/(tabs)/risks"
           icon={<ShieldAlert color="#fca5a5" />}
           title="Risks"
-          subtitle="Findings and actions"
+          subtitle="Findings from real scan"
         />
         <NavCard
           href="/(tabs)/tools"
@@ -89,7 +93,7 @@ export default function HomeScreen() {
           href="/(tabs)/sites"
           icon={<Archive color="#86efac" />}
           title="Sites"
-          subtitle="Client profiles"
+          subtitle="Current scan context"
         />
       </View>
     </ScrollView>
