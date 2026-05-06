@@ -1,6 +1,6 @@
 import { Device, RiskFinding, Scan, Service } from "../models/types";
 import { getCurrentNetworkInfo } from "./networkInfo";
-import { probeCommonHttpPorts } from "./httpProbe";
+import { COMMON_TCP_PORTS, scanTcpPorts } from "./tcpPortScanner";
 import { getLikelySubnet, getUsableHostsFor24 } from "../utils/ip";
 
 export type RealScanProgressStage =
@@ -30,9 +30,9 @@ export async function runRealScan(
   onProgress: (stage: RealScanProgressStage, progress: number, message: string) => void,
   options: RealScanOptions = {},
 ): Promise<RealScanResult> {
-  const maxHosts = options.maxHosts ?? 64;
-  const timeoutMs = options.timeoutMs ?? 1000;
-  const concurrency = options.concurrency ?? 12;
+  const maxHosts = options.maxHosts ?? 96;
+  const timeoutMs = options.timeoutMs ?? 750;
+  const concurrency = options.concurrency ?? 16;
 
   onProgress("reading_network", 5, "Reading phone network information");
   const networkInfo = await getCurrentNetworkInfo();
@@ -56,52 +56,42 @@ export async function runRealScan(
   let completed = 0;
 
   await runWithConcurrency(prioritizedHosts, concurrency, async (ip) => {
-    const reachableServices = await probeCommonHttpPorts(ip, timeoutMs);
+    const openPorts = await scanTcpPorts(ip, COMMON_TCP_PORTS, timeoutMs);
 
-    if (reachableServices.length > 0) {
+    if (openPorts.length > 0) {
       const deviceId = `device-${ip.replaceAll(".", "-")}`;
-      const hasRiskyHttp = reachableServices.some(
-        (result) => result.port === 80 || result.port === 8080 || result.port === 8000,
-      );
+      const ports = openPorts.map((result) => result.port);
+      const highestRisk = Math.max(...ports.map(getNumericRisk));
 
       devices.push({
         id: deviceId,
         scanId,
-        name: inferDeviceName(ip, reachableServices.map((item) => item.port)),
+        name: inferDeviceName(ip, ports),
         ip,
         vendor: "Unknown",
-        type: "unknown",
-        latencyMs: Math.min(...reachableServices.map((item) => item.latencyMs ?? 0)),
-        status: hasRiskyHttp ? "risk" : "online",
+        type: inferDeviceType(ip, ports),
+        latencyMs: Math.min(...openPorts.map((item) => item.latencyMs)),
+        status: highestRisk >= 2 ? "risk" : "online",
         isKnown: false,
-        notes: "Detected by real HTTP service probe.",
+        notes: `Detected by native TCP probe. Open ports: ${ports.join(", ")}.`,
       });
 
-      reachableServices.forEach((result) => {
+      openPorts.forEach((result) => {
         const serviceId = `service-${ip.replaceAll(".", "-")}-${result.port}`;
+        const riskLevel = getServiceRisk(result.port);
+
         services.push({
           id: serviceId,
           deviceId,
           port: result.port,
           protocol: "tcp",
           name: getServiceName(result.port),
-          description: `HTTP probe reached ${result.url}${result.status ? ` with status ${result.status}` : ""}`,
-          riskLevel: getServiceRisk(result.port),
+          description: `TCP connect succeeded in ${result.latencyMs} ms`,
+          riskLevel,
         });
 
-        if (result.port === 80 || result.port === 8080 || result.port === 8000) {
-          risks.push({
-            id: `risk-${serviceId}`,
-            scanId,
-            deviceId,
-            severity: "medium",
-            title: "Unencrypted HTTP service detected",
-            evidence: `TCP ${result.port} reachable on ${ip}`,
-            recommendation:
-              "Verify whether this is a management interface. Prefer HTTPS or restrict access to a management VLAN.",
-            status: "open",
-          });
-        }
+        const finding = buildRiskFinding(scanId, deviceId, ip, result.port);
+        if (finding) risks.push(finding);
       });
     }
 
@@ -132,7 +122,7 @@ export async function runRealScan(
     services,
     risks,
     warning:
-      "This real scan currently detects hosts with reachable HTTP/HTTPS services. Full ICMP, ARP, MAC/vendor, UDP, and raw TCP scans require a custom Android native module.",
+      "Native TCP scan enabled. ICMP ping, ARP table, MAC/vendor lookup, UDP services, and SNMP inventory are the next native Android layer.",
   };
 }
 
@@ -174,30 +164,158 @@ function inferGatewayIp(ipAddress: string): string {
 
 function inferDeviceName(ip: string, ports: number[]): string {
   if (ip.endsWith(".1")) return "Likely Gateway";
-  if (ports.includes(80) || ports.includes(443)) return "Web-managed device";
-  return "Discovered host";
+  if (ports.includes(631) || ports.includes(9100) || ports.includes(515)) return "Network Printer";
+  if (ports.includes(445) || ports.includes(139)) return "File Sharing Host";
+  if (ports.includes(3389)) return "Remote Desktop Host";
+  if (ports.includes(22) || ports.includes(23) || ports.includes(80) || ports.includes(443) || ports.includes(8080)) return "Managed Network Device";
+  return "Discovered Host";
+}
+
+function inferDeviceType(ip: string, ports: number[]): Device["type"] {
+  if (ip.endsWith(".1")) return "router";
+  if (ports.includes(631) || ports.includes(9100) || ports.includes(515)) return "printer";
+  if (ports.includes(445) || ports.includes(139)) return "server";
+  return "unknown";
 }
 
 function getServiceName(port: number): string {
   switch (port) {
+    case 21:
+      return "FTP";
+    case 22:
+      return "SSH";
+    case 23:
+      return "Telnet";
+    case 25:
+      return "SMTP";
+    case 53:
+      return "DNS";
     case 80:
       return "HTTP";
+    case 110:
+      return "POP3";
+    case 139:
+      return "NetBIOS";
+    case 143:
+      return "IMAP";
     case 443:
       return "HTTPS";
-    case 8080:
-      return "HTTP Alternate";
+    case 445:
+      return "SMB";
+    case 515:
+      return "LPD Print";
+    case 548:
+      return "AFP";
+    case 587:
+      return "SMTP Submission";
+    case 631:
+      return "IPP";
+    case 993:
+      return "IMAPS";
+    case 995:
+      return "POP3S";
+    case 1433:
+      return "MSSQL";
+    case 3306:
+      return "MySQL";
+    case 3389:
+      return "RDP";
+    case 5900:
+      return "VNC";
     case 8000:
+      return "HTTP Alternate";
+    case 8080:
       return "HTTP Alternate";
     case 8443:
       return "HTTPS Alternate";
+    case 9100:
+      return "JetDirect Print";
     default:
       return `TCP ${port}`;
   }
 }
 
 function getServiceRisk(port: number): "none" | "low" | "medium" | "high" {
-  if (port === 80 || port === 8080 || port === 8000) return "medium";
+  if (port === 23 || port === 21) return "high";
+  if ([80, 110, 139, 445, 1433, 3306, 3389, 5900, 8000, 8080].includes(port)) return "medium";
   return "low";
+}
+
+function getNumericRisk(port: number): number {
+  const risk = getServiceRisk(port);
+  if (risk === "high") return 3;
+  if (risk === "medium") return 2;
+  if (risk === "low") return 1;
+  return 0;
+}
+
+function buildRiskFinding(scanId: string, deviceId: string, ip: string, port: number): RiskFinding | null {
+  if (port === 23) {
+    return {
+      id: `risk-${deviceId}-${port}`,
+      scanId,
+      deviceId,
+      severity: "high",
+      title: "Telnet detected",
+      evidence: `TCP ${port} reachable on ${ip}`,
+      recommendation: "Disable Telnet and use SSH for management access.",
+      status: "open",
+    };
+  }
+
+  if (port === 21) {
+    return {
+      id: `risk-${deviceId}-${port}`,
+      scanId,
+      deviceId,
+      severity: "high",
+      title: "FTP detected",
+      evidence: `TCP ${port} reachable on ${ip}`,
+      recommendation: "Replace FTP with SFTP, SCP, HTTPS, or another encrypted transfer method.",
+      status: "open",
+    };
+  }
+
+  if ([80, 8000, 8080].includes(port)) {
+    return {
+      id: `risk-${deviceId}-${port}`,
+      scanId,
+      deviceId,
+      severity: "medium",
+      title: "Unencrypted HTTP service detected",
+      evidence: `TCP ${port} reachable on ${ip}`,
+      recommendation: "Verify whether this is a management interface. Prefer HTTPS or restrict access to a management VLAN.",
+      status: "open",
+    };
+  }
+
+  if ([445, 139].includes(port)) {
+    return {
+      id: `risk-${deviceId}-${port}`,
+      scanId,
+      deviceId,
+      severity: "medium",
+      title: "File sharing service detected",
+      evidence: `TCP ${port} reachable on ${ip}`,
+      recommendation: "Confirm SMB/NetBIOS exposure is expected and restricted to trusted networks.",
+      status: "open",
+    };
+  }
+
+  if ([3389, 5900].includes(port)) {
+    return {
+      id: `risk-${deviceId}-${port}`,
+      scanId,
+      deviceId,
+      severity: "medium",
+      title: "Remote access service detected",
+      evidence: `TCP ${port} reachable on ${ip}`,
+      recommendation: "Confirm remote access is required and restricted to admin networks or VPN users.",
+      status: "open",
+    };
+  }
+
+  return null;
 }
 
 function ipToNumber(ip: string): number {
