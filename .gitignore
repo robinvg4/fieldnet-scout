@@ -33,6 +33,12 @@ yarn-error.*
 # local env files
 .env*.local
 
+# FieldNet local scanner output
+.fieldnet/
+fieldnet-scan.csv
+*.scan.csv
+*.scan.json
+
 # typescript
 *.tsbuildinfo
 
