@@ -1,25 +1,63 @@
-import { Stack } from "expo-router";
-import { StatusBar } from "expo-status-bar";
+import { Tabs } from "expo-router";
+import { Activity, Archive, Network, ShieldAlert, Wrench } from "lucide-react-native";
 
-export default function RootLayout() {
+export default function TabLayout() {
   return (
-    <>
-      <StatusBar style="light" />
-      <Stack
-        screenOptions={{
-          headerStyle: { backgroundColor: "#020617" },
-          headerTintColor: "#f8fafc",
-          headerTitleStyle: { fontWeight: "700" },
-          contentStyle: { backgroundColor: "#020617" },
+    <Tabs
+      screenOptions={{
+        headerStyle: { backgroundColor: "#020617" },
+        headerTintColor: "#f8fafc",
+        headerTitleStyle: { fontWeight: "700" },
+        tabBarStyle: {
+          backgroundColor: "#020617",
+          borderTopColor: "#1e293b",
+        },
+        tabBarActiveTintColor: "#38bdf8",
+        tabBarInactiveTintColor: "#64748b",
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: "Scan",
+          tabBarIcon: ({ color }) => <Activity color={color} size={22} />,
         }}
-      >
-        <Stack.Screen name="index" options={{ title: "FieldNet Scout" }} />
-        <Stack.Screen name="scan" options={{ title: "Scan" }} />
-        <Stack.Screen name="devices" options={{ title: "Devices" }} />
-        <Stack.Screen name="risks" options={{ title: "Risks" }} />
-        <Stack.Screen name="tools" options={{ title: "Tools" }} />
-        <Stack.Screen name="sites" options={{ title: "Sites" }} />
-      </Stack>
-    </>
+      />
+      <Tabs.Screen
+        name="scan"
+        options={{
+          title: "Run Scan",
+          tabBarIcon: ({ color }) => <Activity color={color} size={22} />,
+        }}
+      />
+      <Tabs.Screen
+        name="devices"
+        options={{
+          title: "Devices",
+          tabBarIcon: ({ color }) => <Network color={color} size={22} />,
+        }}
+      />
+      <Tabs.Screen
+        name="risks"
+        options={{
+          title: "Risks",
+          tabBarIcon: ({ color }) => <ShieldAlert color={color} size={22} />,
+        }}
+      />
+      <Tabs.Screen
+        name="tools"
+        options={{
+          title: "Tools",
+          tabBarIcon: ({ color }) => <Wrench color={color} size={22} />,
+        }}
+      />
+      <Tabs.Screen
+        name="sites"
+        options={{
+          title: "Sites",
+          tabBarIcon: ({ color }) => <Archive color={color} size={22} />,
+        }}
+      />
+    </Tabs>
   );
 }
