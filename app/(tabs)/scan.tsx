@@ -12,7 +12,7 @@ import {
   getStageLabel,
   runMockScan,
   ScanProgressStage,
-} from "../src/services/scanEngine";
+} from "../../src/services/scanEngine";
 
 export default function ScanScreen() {
   const [stage, setStage] = useState<ScanProgressStage>("idle");
