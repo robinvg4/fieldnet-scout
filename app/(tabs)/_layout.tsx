@@ -58,6 +58,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <Archive color={color} size={22} />,
         }}
       />
+      <Tabs.Screen name="explore" options={{ href: null }} />
     </Tabs>
   );
 }
