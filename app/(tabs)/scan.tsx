@@ -8,20 +8,18 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  RealScanProgressStage,
-  runRealScan,
-} from "../../src/services/realScanEngine";
+import { runAgentScan } from "../../src/services/agentScanClient";
+import { RealScanProgressStage } from "../../src/services/realScanEngine";
 import { setCurrentScanState } from "../../src/state/scanStore";
 
 function getStageLabel(stage: RealScanProgressStage): string {
   switch (stage) {
     case "reading_network":
-      return "Reading network";
+      return "Connecting to agent";
     case "building_range":
-      return "Building scan range";
+      return "Starting scan";
     case "probing_hosts":
-      return "Probing hosts";
+      return "Receiving results";
     case "building_results":
       return "Building results";
     case "completed":
@@ -36,7 +34,7 @@ function getStageLabel(stage: RealScanProgressStage): string {
 export default function ScanScreen() {
   const [stage, setStage] = useState<RealScanProgressStage>("idle");
   const [progress, setProgress] = useState(0);
-  const [message, setMessage] = useState("Ready to scan the current /24 network.");
+  const [message, setMessage] = useState("Ready to scan through the local desktop scanner agent.");
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deviceCount, setDeviceCount] = useState(0);
@@ -51,7 +49,7 @@ export default function ScanScreen() {
     setStage("reading_network");
 
     try {
-      const result = await runRealScan((nextStage, nextProgress, nextMessage) => {
+      const result = await runAgentScan((nextStage, nextProgress, nextMessage) => {
         setStage(nextStage);
         setProgress(nextProgress);
         setMessage(nextMessage);
@@ -60,12 +58,12 @@ export default function ScanScreen() {
       setCurrentScanState(result);
       setDeviceCount(result.devices.length);
       setRiskCount(result.risks.length);
-      setMessage(result.warning ?? "Real scan completed.");
+      setMessage(result.warning ?? "Agent scan completed.");
     } catch (scanError) {
       setStage("failed");
       setProgress(0);
       setError(scanError instanceof Error ? scanError.message : "Unknown scan failure");
-      setMessage("The scan could not complete.");
+      setMessage("The scanner agent could not complete the scan.");
     } finally {
       setIsScanning(false);
     }
@@ -74,10 +72,10 @@ export default function ScanScreen() {
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <View style={styles.card}>
-        <Text style={styles.eyebrow}>Real scan target</Text>
-        <Text style={styles.title}>Current /24 Network</Text>
+        <Text style={styles.eyebrow}>Real scan source</Text>
+        <Text style={styles.title}>Desktop Agent</Text>
         <Text style={styles.subtitle}>
-          Detects reachable HTTP/HTTPS services on nearby LAN hosts.
+          Runs a real TCP network scan from your Windows machine and sends the results into the app.
         </Text>
 
         <View style={styles.progressTrack}>
@@ -102,7 +100,7 @@ export default function ScanScreen() {
         >
           <Activity color="#fff" size={20} />
           <Text style={styles.primaryButtonText}>
-            {isScanning ? "Scanning..." : "Run Real Scan"}
+            {isScanning ? "Scanning..." : "Run Agent Scan"}
           </Text>
         </TouchableOpacity>
 
@@ -117,7 +115,7 @@ export default function ScanScreen() {
           <Link href="/(tabs)/devices" asChild>
             <TouchableOpacity style={styles.secondaryButton}>
               <CheckCircle2 color="#86efac" size={20} />
-              <Text style={styles.secondaryButtonText}>View Real Devices</Text>
+              <Text style={styles.secondaryButtonText}>View Devices</Text>
             </TouchableOpacity>
           </Link>
         )}
