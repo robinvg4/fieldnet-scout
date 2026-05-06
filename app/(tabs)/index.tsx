@@ -1,4 +1,6 @@
 import { Link } from "expo-router";
+import type { Href } from "expo-router";
+import type { ReactNode } from "react";
 import {
   Activity,
   Archive,
@@ -18,7 +20,7 @@ import {
   mockRisks,
   mockScan,
   mockSite,
-} from "../src/data/mockData";
+} from "../../src/data/mockData";
 
 export default function HomeScreen() {
   return (
@@ -47,25 +49,25 @@ export default function HomeScreen() {
 
       <View style={styles.navGrid}>
         <NavCard
-          href="/devices"
+          href="/(tabs)/devices"
           icon={<Network color="#93c5fd" />}
           title="Devices"
           subtitle="Inventory and services"
         />
         <NavCard
-          href="/risks"
+          href="/(tabs)/risks"
           icon={<ShieldAlert color="#fca5a5" />}
           title="Risks"
           subtitle="Findings and actions"
         />
         <NavCard
-          href="/tools"
+          href="/(tabs)/tools"
           icon={<Wrench color="#c4b5fd" />}
           title="Tools"
           subtitle="Ping, DNS, traceroute"
         />
         <NavCard
-          href="/sites"
+          href="/(tabs)/sites"
           icon={<Archive color="#86efac" />}
           title="Sites"
           subtitle="Client profiles"
@@ -90,8 +92,8 @@ function NavCard({
   title,
   subtitle,
 }: {
-  href: string;
-  icon: React.ReactNode;
+  href: Href;
+  icon: ReactNode;
   title: string;
   subtitle: string;
 }) {
