@@ -7,7 +7,7 @@ import {
   Server,
   Wifi,
 } from "lucide-react-native";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -16,84 +16,110 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { mockDevices, mockServices } from "../../src/data/mockData";
-import { Device, DeviceType } from "../../src/models/types";
+import { Device, DeviceType, Service } from "../../src/models/types";
+import {
+  CurrentScanState,
+  getCurrentScanState,
+  subscribeToScanState,
+} from "../../src/state/scanStore";
 
 export default function DevicesScreen() {
   const [query, setQuery] = useState("");
-  const [selectedDevice, setSelectedDevice] = useState<Device>(mockDevices[0]);
+  const [scanState, setScanState] = useState<CurrentScanState>(getCurrentScanState());
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+
+  useEffect(() => subscribeToScanState(setScanState), []);
 
   const filteredDevices = useMemo(() => {
-    return mockDevices.filter((device) => {
-      const text =
-        `${device.name} ${device.ip} ${device.vendor} ${device.type}`.toLowerCase();
+    return scanState.devices.filter((device) => {
+      const text = `${device.name} ${device.ip} ${device.vendor} ${device.type}`.toLowerCase();
       return text.includes(query.toLowerCase());
     });
-  }, [query]);
+  }, [query, scanState.devices]);
 
-  const services = mockServices.filter(
-    (service) => service.deviceId === selectedDevice.id,
-  );
+  const selectedDevice =
+    filteredDevices.find((device) => device.id === selectedDeviceId) ?? filteredDevices[0] ?? null;
+
+  const services = selectedDevice
+    ? scanState.services.filter((service) => service.deviceId === selectedDevice.id)
+    : [];
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <TextInput
         value={query}
         onChangeText={setQuery}
-        placeholder="Search devices, IPs, vendors"
+        placeholder="Search real scan results"
         placeholderTextColor="#64748b"
         style={styles.search}
       />
 
-      <View style={styles.list}>
-        {filteredDevices.map((device) => (
-          <DeviceRow
-            key={device.id}
-            device={device}
-            selected={selectedDevice.id === device.id}
-            onPress={() => setSelectedDevice(device)}
-          />
-        ))}
+      {scanState.warning && <Text style={styles.warning}>{scanState.warning}</Text>}
+
+      {filteredDevices.length === 0 ? (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyTitle}>No real scan results yet</Text>
+          <Text style={styles.emptyText}>
+            Go to Run Scan and start a real scan. Devices will appear here when reachable HTTP/HTTPS services are detected.
+          </Text>
+        </View>
+      ) : (
+        <>
+          <View style={styles.list}>
+            {filteredDevices.map((device) => (
+              <DeviceRow
+                key={device.id}
+                device={device}
+                selected={selectedDevice?.id === device.id}
+                onPress={() => setSelectedDeviceId(device.id)}
+              />
+            ))}
+          </View>
+
+          {selectedDevice && <DeviceDetail device={selectedDevice} services={services} />}
+        </>
+      )}
+    </ScrollView>
+  );
+}
+
+function DeviceDetail({ device, services }: { device: Device; services: Service[] }) {
+  return (
+    <View style={styles.detailCard}>
+      <Text style={styles.eyebrow}>Device detail</Text>
+      <Text style={styles.title}>{device.name}</Text>
+      <Text style={styles.subtitle}>{device.ip}</Text>
+
+      <View style={styles.infoGrid}>
+        <Info label="Vendor" value={device.vendor || "Unknown"} />
+        <Info label="Type" value={device.type} />
+        <Info label="Status" value={device.status} />
+        <Info label="Latency" value={`${device.latencyMs ?? "-"} ms`} />
       </View>
 
-      <View style={styles.detailCard}>
-        <Text style={styles.eyebrow}>Device detail</Text>
-        <Text style={styles.title}>{selectedDevice.name}</Text>
-        <Text style={styles.subtitle}>
-          {selectedDevice.ip} · {selectedDevice.mac || "No MAC"}
-        </Text>
+      <Text style={styles.sectionTitle}>Detected services</Text>
 
-        <View style={styles.infoGrid}>
-          <Info label="Vendor" value={selectedDevice.vendor || "Unknown"} />
-          <Info label="Type" value={selectedDevice.type} />
-          <Info label="Status" value={selectedDevice.status} />
-          <Info
-            label="Latency"
-            value={`${selectedDevice.latencyMs ?? "-"} ms`}
-          />
-        </View>
-
-        <Text style={styles.sectionTitle}>Open services</Text>
-
-        {services.map((service) => (
+      {services.length === 0 ? (
+        <Text style={styles.notes}>No services attached to this result.</Text>
+      ) : (
+        services.map((service) => (
           <View key={service.id} style={styles.serviceRow}>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.serviceName}>{service.name}</Text>
               <Text style={styles.serviceMeta}>
-                {service.protocol.toUpperCase()} {service.port} ·{" "}
-                {service.description}
+                {service.protocol.toUpperCase()} {service.port} · {service.description}
               </Text>
             </View>
             <Text style={[styles.riskBadge, getRiskStyle(service.riskLevel)]}>
               {service.riskLevel}
             </Text>
           </View>
-        ))}
+        ))
+      )}
 
-        <Text style={styles.sectionTitle}>Notes</Text>
-        <Text style={styles.notes}>{selectedDevice.notes || "No notes."}</Text>
-      </View>
-    </ScrollView>
+      <Text style={styles.sectionTitle}>Notes</Text>
+      <Text style={styles.notes}>{device.notes || "No notes."}</Text>
+    </View>
   );
 }
 
@@ -123,16 +149,6 @@ function DeviceRow({
         <Text style={styles.deviceMeta}>
           {device.ip} · {device.vendor || "Unknown"} · {device.type}
         </Text>
-
-        <View style={styles.badgeRow}>
-          {!device.isKnown && <Text style={styles.badgeUnknown}>UNKNOWN</Text>}
-          {device.status === "changed" && (
-            <Text style={styles.badgeChanged}>CHANGED</Text>
-          )}
-          {device.status === "risk" && (
-            <Text style={styles.badgeRisk}>RISK</Text>
-          )}
-        </View>
       </View>
 
       {risky && <AlertTriangle color="#fbbf24" size={18} />}
@@ -183,6 +199,24 @@ const styles = StyleSheet.create({
     color: "#f8fafc",
     padding: 14,
   },
+  warning: {
+    color: "#fcd34d",
+    backgroundColor: "#451a03",
+    borderColor: "#78350f",
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 12,
+    lineHeight: 18,
+  },
+  emptyCard: {
+    backgroundColor: "#0f172a",
+    borderRadius: 22,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#1e293b",
+  },
+  emptyTitle: { color: "#f8fafc", fontWeight: "800", fontSize: 18 },
+  emptyText: { color: "#94a3b8", marginTop: 8, lineHeight: 20 },
   list: { gap: 10 },
   deviceRow: {
     backgroundColor: "#0f172a",
@@ -208,34 +242,6 @@ const styles = StyleSheet.create({
   },
   deviceName: { color: "#f8fafc", fontWeight: "800", fontSize: 15 },
   deviceMeta: { color: "#94a3b8", marginTop: 3, fontSize: 12 },
-  badgeRow: { flexDirection: "row", gap: 6, marginTop: 8 },
-  badgeUnknown: {
-    color: "#fcd34d",
-    borderColor: "#78350f",
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    fontSize: 10,
-  },
-  badgeChanged: {
-    color: "#93c5fd",
-    borderColor: "#1d4ed8",
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    fontSize: 10,
-  },
-  badgeRisk: {
-    color: "#fca5a5",
-    borderColor: "#7f1d1d",
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    fontSize: 10,
-  },
   detailCard: {
     backgroundColor: "#0f172a",
     borderRadius: 24,
