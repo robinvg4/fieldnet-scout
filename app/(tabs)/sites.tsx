@@ -11,7 +11,7 @@ import {
   mockRisks,
   mockScan,
   mockSite,
-} from "../src/data/mockData";
+} from "../../src/data/mockData";
 
 export default function SitesScreen() {
   return (
