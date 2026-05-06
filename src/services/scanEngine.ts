@@ -18,7 +18,7 @@ export type MockScanResult = {
   devices: typeof mockDevices;
   services: typeof mockServices;
   risks: typeof mockRisks;
-};][
+};
 
 export async function runMockScan(
   onProgress: (stage: ScanProgressStage, progress: number) => void,
