@@ -1,6 +1,6 @@
 import { AlertTriangle } from "lucide-react-native";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
-import { mockDevices, mockRisks } from "../src/data/mockData";
+import { mockDevices, mockRisks } from "../../src/data/mockData";
 
 export default function RisksScreen() {
   return (
