@@ -16,8 +16,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { mockDevices, mockServices } from "../src/data/mockData";
-import { Device, DeviceType } from "../src/models/types";
+import { mockDevices, mockServices } from "../../src/data/mockData";
+import { Device, DeviceType } from "../../src/models/types";
 
 export default function DevicesScreen() {
   const [query, setQuery] = useState("");
