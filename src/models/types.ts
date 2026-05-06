@@ -42,6 +42,13 @@ export type Scan = {
   riskCount: number;
 };
 
+export type DeviceFingerprint = {
+  role: string;
+  confidence: number;
+  openPorts: number[];
+  source: string;
+};
+
 export type Device = {
   id: string;
   scanId: string;
@@ -56,6 +63,7 @@ export type Device = {
   isKnown: boolean;
   locationLabel?: string;
   notes?: string;
+  fingerprint?: DeviceFingerprint;
 };
 
 export type Service = {
