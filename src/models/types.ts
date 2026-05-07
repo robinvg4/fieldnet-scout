@@ -47,6 +47,32 @@ export type DeviceFingerprint = {
   confidence: number;
   openPorts: number[];
   source: string;
+  vendorPrefix?: string;
+  vendorFamily?: string;
+};
+
+export type DeviceShare = {
+  name: string;
+  type: string;
+};
+
+export type DeviceHttpProbe = {
+  url: string;
+  status?: number;
+  title?: string | null;
+  server?: string | null;
+  poweredBy?: string | null;
+  error?: string;
+};
+
+export type DeviceDiscoverySignal = {
+  ip: string;
+  protocol: string;
+  server?: string;
+  st?: string;
+  usn?: string;
+  location?: string;
+  rawBytes?: number;
 };
 
 export type Device = {
@@ -64,6 +90,11 @@ export type Device = {
   locationLabel?: string;
   notes?: string;
   fingerprint?: DeviceFingerprint;
+  shares?: DeviceShare[];
+  http?: DeviceHttpProbe[];
+  discovery?: DeviceDiscoverySignal[];
+  os?: string;
+  user?: string;
 };
 
 export type Service = {
