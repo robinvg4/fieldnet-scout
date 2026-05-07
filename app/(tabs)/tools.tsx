@@ -3,6 +3,7 @@ import {
   ClipboardList,
   Globe,
   Network,
+  Play,
   Search,
   Wrench,
 } from "lucide-react-native";
@@ -15,15 +16,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { AgentToolId, runAgentTool } from "../../src/services/agentToolsClient";
 
-type ToolId =
-  | "ping"
-  | "traceroute"
-  | "dns"
-  | "reverseDns"
-  | "portCheck"
-  | "subnet"
-  | "publicIp";
+type ToolId = AgentToolId;
 
 type Tool = {
   id: ToolId;
@@ -35,23 +30,50 @@ type Tool = {
 };
 
 const tools: Tool[] = [
-  { id: "ping", name: "Ping", description: "Generate a reachability test", icon: Network, placeholder: "192.168.10.1", defaultValue: "192.168.10.1" },
-  { id: "traceroute", name: "Traceroute", description: "Generate a path trace", icon: Network, placeholder: "8.8.8.8", defaultValue: "8.8.8.8" },
+  { id: "ping", name: "Ping", description: "Run a real reachability test from the scanner host", icon: Network, placeholder: "192.168.10.1", defaultValue: "192.168.10.1" },
+  { id: "traceroute", name: "Traceroute", description: "Run a real path trace from the scanner host", icon: Network, placeholder: "8.8.8.8", defaultValue: "8.8.8.8" },
   { id: "dns", name: "DNS Lookup", description: "Resolve hostname to IP", icon: Search, placeholder: "example.com", defaultValue: "example.com" },
   { id: "reverseDns", name: "Reverse DNS", description: "Resolve IP to hostname", icon: Search, placeholder: "192.168.10.1", defaultValue: "192.168.10.1" },
-  { id: "portCheck", name: "Port Check", description: "Generate a TCP port test", icon: Wrench, placeholder: "192.168.10.1:443", defaultValue: "192.168.10.1:443" },
+  { id: "portCheck", name: "Port Check", description: "Test a live TCP connection", icon: Wrench, placeholder: "192.168.10.1:443", defaultValue: "192.168.10.1:443" },
   { id: "subnet", name: "Subnet Calculator", description: "Calculate a common /24 range", icon: Network, placeholder: "192.168.10.42", defaultValue: "192.168.10.42" },
-  { id: "publicIp", name: "Public IP", description: "Show external-IP check commands", icon: Globe, placeholder: "", defaultValue: "" },
+  { id: "publicIp", name: "Public IP", description: "Check public egress IP from scanner host", icon: Globe, placeholder: "", defaultValue: "" },
 ];
 
 export default function ToolsScreen() {
   const [selectedToolId, setSelectedToolId] = useState<ToolId>("ping");
   const selectedTool = tools.find((tool) => tool.id === selectedToolId) ?? tools[0];
   const [value, setValue] = useState(selectedTool.defaultValue);
+  const [isRunning, setIsRunning] = useState(false);
+  const [liveCommand, setLiveCommand] = useState<string | null>(null);
+  const [liveOutput, setLiveOutput] = useState<string | null>(null);
+  const [liveOk, setLiveOk] = useState<boolean | null>(null);
 
   function selectTool(tool: Tool) {
     setSelectedToolId(tool.id);
     setValue(tool.defaultValue);
+    setLiveCommand(null);
+    setLiveOutput(null);
+    setLiveOk(null);
+  }
+
+  async function runTool() {
+    setIsRunning(true);
+    setLiveCommand(null);
+    setLiveOutput("Running diagnostic from scanner host...");
+    setLiveOk(null);
+
+    try {
+      const result = await runAgentTool(selectedTool.id, value);
+      setLiveCommand(result.command);
+      setLiveOutput(result.output || "No output returned.");
+      setLiveOk(result.ok);
+    } catch (error) {
+      setLiveCommand("Agent request failed");
+      setLiveOutput(error instanceof Error ? error.message : "Unknown tool failure");
+      setLiveOk(false);
+    } finally {
+      setIsRunning(false);
+    }
   }
 
   const output = useMemo(() => buildToolOutput(selectedTool.id, value), [selectedTool.id, value]);
@@ -60,9 +82,9 @@ export default function ToolsScreen() {
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <View style={styles.heroCard}>
         <Text style={styles.eyebrow}>Engineer utilities</Text>
-        <Text style={styles.heroTitle}>Field Tools</Text>
+        <Text style={styles.heroTitle}>Live Field Tools</Text>
         <Text style={styles.heroSubtitle}>
-          These tools generate exact Windows commands for on-site diagnostics. Native execution from the app will be added through agent endpoints next.
+          Runs diagnostics from your Windows scanner host through the tools agent. Start it with npm run tools-agent.
         </Text>
       </View>
 
@@ -103,7 +125,18 @@ export default function ToolsScreen() {
           />
         )}
 
-        <Text style={styles.label}>PowerShell command</Text>
+        <TouchableOpacity style={[styles.runButton, isRunning && styles.disabledButton]} onPress={runTool} disabled={isRunning}>
+          <Play color="#fff" size={18} />
+          <Text style={styles.runButtonText}>{isRunning ? "Running..." : "Run Live Tool"}</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.label}>Live result</Text>
+        <View style={[styles.resultBox, liveOk === false && styles.resultBoxError, liveOk === true && styles.resultBoxOk]}>
+          <Text style={styles.resultCommand}>{liveCommand || "No live run yet."}</Text>
+          <Text selectable style={styles.resultOutput}>{liveOutput || "Tap Run Live Tool to execute through the tools agent."}</Text>
+        </View>
+
+        <Text style={styles.label}>Fallback PowerShell command</Text>
         <Text selectable style={styles.command}>{output.command}</Text>
 
         <Text style={styles.label}>Expected use</Text>
@@ -125,43 +158,21 @@ function buildToolOutput(toolId: ToolId, rawValue: string): { command: string; e
 
   switch (toolId) {
     case "ping":
-      return {
-        command: `Test-Connection ${value || "192.168.10.1"} -Count 4`,
-        explanation: "Use this to confirm basic reachability, packet loss, and approximate latency from the Windows scanner host.",
-      };
+      return { command: `Test-Connection ${value || "192.168.10.1"} -Count 4`, explanation: "Confirms reachability, packet loss, and approximate latency from the Windows scanner host." };
     case "traceroute":
-      return {
-        command: `tracert ${value || "8.8.8.8"}`,
-        explanation: "Use this to inspect the Layer 3 path from the scanner host to a destination.",
-      };
+      return { command: `tracert ${value || "8.8.8.8"}`, explanation: "Inspects the Layer 3 path from the scanner host to a destination." };
     case "dns":
-      return {
-        command: `Resolve-DnsName ${value || "example.com"}`,
-        explanation: "Use this to validate local DNS resolution and DNS server behavior.",
-      };
+      return { command: `Resolve-DnsName ${value || "example.com"}`, explanation: "Validates DNS resolution and DNS server behavior." };
     case "reverseDns":
-      return {
-        command: `Resolve-DnsName ${value || "192.168.10.1"} -Type PTR`,
-        explanation: "Use this to check whether an IP address has a reverse DNS record.",
-      };
+      return { command: `Resolve-DnsName ${value || "192.168.10.1"} -Type PTR`, explanation: "Checks whether an IP address has a reverse DNS record." };
     case "portCheck": {
       const [host, port] = (value || "192.168.10.1:443").split(":");
-      return {
-        command: `Test-NetConnection ${host || "192.168.10.1"} -Port ${port || "443"}`,
-        explanation: "Use this to verify whether a specific TCP service is reachable from the scanner host.",
-      };
+      return { command: `Test-NetConnection ${host || "192.168.10.1"} -Port ${port || "443"}`, explanation: "Verifies whether a specific TCP service is reachable from the scanner host." };
     }
     case "subnet":
-      return {
-        command: "No shell command required",
-        explanation: "This calculates the common /24 range used by the current scanner workflow.",
-        extra: calculate24(value || "192.168.10.42"),
-      };
+      return { command: "No shell command required", explanation: "Calculates the common /24 range used by the current scanner workflow.", extra: calculate24(value || "192.168.10.42") };
     case "publicIp":
-      return {
-        command: "Invoke-RestMethod https://api.ipify.org",
-        explanation: "Use this from the scanner host to confirm the public egress IP address.",
-      };
+      return { command: "Invoke-RestMethod https://api.ipify.org", explanation: "Confirms the public egress IP address from the scanner host." };
     default:
       return { command: "", explanation: "" };
   }
@@ -169,9 +180,7 @@ function buildToolOutput(toolId: ToolId, rawValue: string): { command: string; e
 
 function calculate24(ip: string): string {
   const parts = ip.split(".");
-  if (parts.length !== 4 || parts.some((part) => Number.isNaN(Number(part)))) {
-    return "Enter a valid IPv4 address.";
-  }
+  if (parts.length !== 4 || parts.some((part) => Number.isNaN(Number(part)))) return "Enter a valid IPv4 address.";
 
   const prefix = `${parts[0]}.${parts[1]}.${parts[2]}`;
   return [`Network: ${prefix}.0/24`, `Usable range: ${prefix}.1 - ${prefix}.254`, `Broadcast: ${prefix}.255`, "Mask: 255.255.255.0"].join("\n");
@@ -193,7 +202,15 @@ const styles = StyleSheet.create({
   panelHeader: { flexDirection: "row", gap: 10, alignItems: "center", marginBottom: 12 },
   panelTitle: { color: "#f8fafc", fontWeight: "900", fontSize: 18 },
   input: { backgroundColor: "#020617", borderColor: "#1e293b", borderWidth: 1, borderRadius: 16, color: "#f8fafc", padding: 13, marginBottom: 12 },
+  runButton: { height: 50, backgroundColor: "#2563eb", borderRadius: 18, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
+  disabledButton: { opacity: 0.6 },
+  runButtonText: { color: "#fff", fontWeight: "900", fontSize: 15 },
   label: { color: "#67e8f9", fontWeight: "900", textTransform: "uppercase", letterSpacing: 1.5, fontSize: 11, marginTop: 12, marginBottom: 6 },
   command: { color: "#bae6fd", backgroundColor: "#020617", borderColor: "#1e293b", borderWidth: 1, borderRadius: 16, padding: 12, lineHeight: 20 },
+  resultBox: { backgroundColor: "#020617", borderColor: "#1e293b", borderWidth: 1, borderRadius: 16, padding: 12 },
+  resultBoxOk: { borderColor: "#166534", backgroundColor: "#052e16" },
+  resultBoxError: { borderColor: "#7f1d1d", backgroundColor: "#450a0a" },
+  resultCommand: { color: "#f8fafc", fontWeight: "900", marginBottom: 8 },
+  resultOutput: { color: "#cbd5e1", lineHeight: 19 },
   body: { color: "#cbd5e1", lineHeight: 20 },
 });
