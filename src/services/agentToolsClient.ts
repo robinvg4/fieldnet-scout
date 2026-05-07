@@ -7,7 +7,8 @@ export type AgentToolId =
   | "reverseDns"
   | "portCheck"
   | "subnet"
-  | "publicIp";
+  | "publicIp"
+  | "ssh";
 
 export type AgentToolResult = {
   tool: AgentToolId;
@@ -16,7 +17,7 @@ export type AgentToolResult = {
   output: string;
 };
 
-const DEFAULT_AGENT_PORT = 47891;
+const DEFAULT_AGENT_PORT = 47892;
 
 function getAgentBaseUrl(): string {
   if (Platform.OS === "android") return `http://10.0.2.2:${DEFAULT_AGENT_PORT}`;
