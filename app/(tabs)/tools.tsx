@@ -6,9 +6,11 @@ import {
   Network,
   Play,
   Search,
+  Send,
+  Square,
   Wrench,
 } from "lucide-react-native";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -17,7 +19,14 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { AgentToolId, runAgentTool } from "../../src/services/agentToolsClient";
+import {
+  AgentToolId,
+  readSshOutput,
+  runAgentTool,
+  sendSshInput,
+  startSshSession,
+  stopSshSession,
+} from "../../src/services/agentToolsClient";
 
 type ToolId = AgentToolId;
 
@@ -36,7 +45,7 @@ const tools: Tool[] = [
   { id: "dns", name: "DNS Lookup", description: "Resolve hostname to IP", icon: Search, placeholder: "example.com", defaultValue: "example.com" },
   { id: "reverseDns", name: "Reverse DNS", description: "Resolve IP to hostname", icon: Search, placeholder: "192.168.10.1", defaultValue: "192.168.10.1" },
   { id: "portCheck", name: "Port Check", description: "Test a live TCP connection", icon: Wrench, placeholder: "192.168.10.1:443", defaultValue: "192.168.10.1:443" },
-  { id: "ssh", name: "SSH", description: "Open an SSH session on the scanner host", icon: KeyRound, placeholder: "admin@192.168.10.1:22", defaultValue: "admin@192.168.10.1:22" },
+  { id: "ssh", name: "SSH Terminal", description: "Interactive SSH inside the app through the tools agent", icon: KeyRound, placeholder: "192.168.10.1:22", defaultValue: "192.168.10.1:22" },
   { id: "subnet", name: "Subnet Calculator", description: "Calculate a common /24 range", icon: Network, placeholder: "192.168.10.42", defaultValue: "192.168.10.42" },
   { id: "publicIp", name: "Public IP", description: "Check public egress IP from scanner host", icon: Globe, placeholder: "", defaultValue: "" },
 ];
@@ -50,6 +59,13 @@ export default function ToolsScreen() {
   const [liveOutput, setLiveOutput] = useState<string | null>(null);
   const [liveOk, setLiveOk] = useState<boolean | null>(null);
 
+  const [sshUsername, setSshUsername] = useState("admin");
+  const [sshPassword, setSshPassword] = useState("");
+  const [sshSessionId, setSshSessionId] = useState<string | null>(null);
+  const [sshTerminal, setSshTerminal] = useState("");
+  const [sshCommand, setSshCommand] = useState("");
+  const [sshRunning, setSshRunning] = useState(false);
+
   function selectTool(tool: Tool) {
     setSelectedToolId(tool.id);
     setValue(tool.defaultValue);
@@ -58,7 +74,29 @@ export default function ToolsScreen() {
     setLiveOk(null);
   }
 
+  useEffect(() => {
+    if (!sshSessionId) return;
+
+    const timer = setInterval(async () => {
+      try {
+        const result = await readSshOutput(sshSessionId);
+        if (result.output) setSshTerminal((current) => `${current}${result.output}`);
+        setSshRunning(result.running);
+      } catch (error) {
+        setSshTerminal((current) => `${current}\n[SSH read error: ${error instanceof Error ? error.message : "unknown"}]\n`);
+        setSshRunning(false);
+      }
+    }, 900);
+
+    return () => clearInterval(timer);
+  }, [sshSessionId]);
+
   async function runTool() {
+    if (selectedTool.id === "ssh") {
+      await connectSsh();
+      return;
+    }
+
     setIsRunning(true);
     setLiveCommand(null);
     setLiveOutput("Running diagnostic from scanner host...");
@@ -78,6 +116,49 @@ export default function ToolsScreen() {
     }
   }
 
+  async function connectSsh() {
+    setIsRunning(true);
+    setSshTerminal("Connecting...\n");
+    setSshSessionId(null);
+    setSshRunning(false);
+
+    try {
+      const result = await startSshSession(value, sshUsername, sshPassword);
+      setLiveCommand(result.command);
+      setLiveOutput(result.output);
+      setLiveOk(result.ok);
+      setSshTerminal(`${result.output}\n`);
+      if (result.ok && result.sessionId) {
+        setSshSessionId(result.sessionId);
+        setSshRunning(true);
+      }
+    } catch (error) {
+      setLiveCommand("SSH connection failed");
+      setLiveOutput(error instanceof Error ? error.message : "Unknown SSH failure");
+      setLiveOk(false);
+      setSshTerminal(`SSH connection failed: ${error instanceof Error ? error.message : "unknown"}\n`);
+    } finally {
+      setIsRunning(false);
+    }
+  }
+
+  async function submitSshCommand() {
+    if (!sshSessionId || sshCommand.trim().length === 0) return;
+
+    const command = sshCommand.endsWith("\n") ? sshCommand : `${sshCommand}\n`;
+    setSshTerminal((current) => `${current}> ${sshCommand}\n`);
+    setSshCommand("");
+    await sendSshInput(sshSessionId, command);
+  }
+
+  async function disconnectSsh() {
+    if (!sshSessionId) return;
+    await stopSshSession(sshSessionId);
+    setSshTerminal((current) => `${current}\n[Disconnected]\n`);
+    setSshSessionId(null);
+    setSshRunning(false);
+  }
+
   const output = useMemo(() => buildToolOutput(selectedTool.id, value), [selectedTool.id, value]);
 
   return (
@@ -86,7 +167,7 @@ export default function ToolsScreen() {
         <Text style={styles.eyebrow}>Engineer utilities</Text>
         <Text style={styles.heroTitle}>Live Field Tools</Text>
         <Text style={styles.heroSubtitle}>
-          Runs diagnostics from your Windows scanner host through the tools agent. Start it with npm run tools-agent.
+          Runs diagnostics from your Windows scanner host through the tools agent. SSH now renders as an interactive terminal inside the app.
         </Text>
       </View>
 
@@ -128,21 +209,73 @@ export default function ToolsScreen() {
         )}
 
         {selectedTool.id === "ssh" && (
-          <Text style={styles.sshNotice}>
-            SSH opens in a new PowerShell window on the Windows scanner host. Credentials stay in that terminal, not inside the app.
-          </Text>
+          <>
+            <View style={styles.sshGrid}>
+              <TextInput
+                value={sshUsername}
+                onChangeText={setSshUsername}
+                placeholder="username"
+                placeholderTextColor="#64748b"
+                autoCapitalize="none"
+                style={[styles.input, styles.sshHalfInput]}
+              />
+              <TextInput
+                value={sshPassword}
+                onChangeText={setSshPassword}
+                placeholder="password"
+                placeholderTextColor="#64748b"
+                secureTextEntry
+                style={[styles.input, styles.sshHalfInput]}
+              />
+            </View>
+            <Text style={styles.sshNotice}>
+              Password is sent to the local tools agent for this connection only. It is not saved by the app or written to disk by the agent.
+            </Text>
+          </>
         )}
 
         <TouchableOpacity style={[styles.runButton, isRunning && styles.disabledButton]} onPress={runTool} disabled={isRunning}>
           <Play color="#fff" size={18} />
-          <Text style={styles.runButtonText}>{isRunning ? "Running..." : selectedTool.id === "ssh" ? "Open SSH Session" : "Run Live Tool"}</Text>
+          <Text style={styles.runButtonText}>{isRunning ? "Running..." : selectedTool.id === "ssh" ? "Connect SSH" : "Run Live Tool"}</Text>
         </TouchableOpacity>
 
-        <Text style={styles.label}>Live result</Text>
-        <View style={[styles.resultBox, liveOk === false && styles.resultBoxError, liveOk === true && styles.resultBoxOk]}>
-          <Text style={styles.resultCommand}>{liveCommand || "No live run yet."}</Text>
-          <Text selectable style={styles.resultOutput}>{liveOutput || "Tap Run Live Tool to execute through the tools agent."}</Text>
-        </View>
+        {selectedTool.id === "ssh" && (
+          <View style={styles.terminalCard}>
+            <View style={styles.terminalHeader}>
+              <Text style={styles.terminalTitle}>SSH Terminal</Text>
+              <Text style={styles.terminalStatus}>{sshRunning ? "Connected" : "Disconnected"}</Text>
+            </View>
+            <Text selectable style={styles.terminalOutput}>{sshTerminal || "Connect to start a session."}</Text>
+            <View style={styles.commandRow}>
+              <TextInput
+                value={sshCommand}
+                onChangeText={setSshCommand}
+                placeholder="command"
+                placeholderTextColor="#64748b"
+                autoCapitalize="none"
+                style={styles.commandInput}
+                editable={Boolean(sshSessionId)}
+                onSubmitEditing={submitSshCommand}
+              />
+              <TouchableOpacity style={styles.smallButton} onPress={submitSshCommand} disabled={!sshSessionId}>
+                <Send color="#fff" size={16} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.stopButton} onPress={disconnectSsh} disabled={!sshSessionId}>
+                <Square color="#fff" size={16} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {selectedTool.id !== "ssh" && (
+          <>
+            <Text style={styles.label}>Live result</Text>
+            <View style={[styles.resultBox, liveOk === false && styles.resultBoxError, liveOk === true && styles.resultBoxOk]}>
+              <Text style={styles.resultCommand}>{liveCommand || "No live run yet."}</Text>
+              <Text selectable style={styles.resultOutput}>{liveOutput || "Tap Run Live Tool to execute through the tools agent."}</Text>
+            </View>
+          </>
+        )}
 
         <Text style={styles.label}>Fallback PowerShell command</Text>
         <Text selectable style={styles.command}>{output.command}</Text>
@@ -178,9 +311,8 @@ function buildToolOutput(toolId: ToolId, rawValue: string): { command: string; e
       return { command: `Test-NetConnection ${host || "192.168.10.1"} -Port ${port || "443"}`, explanation: "Verifies whether a specific TCP service is reachable from the scanner host." };
     }
     case "ssh": {
-      const target = value || "admin@192.168.10.1:22";
-      const [left, port] = target.split(":");
-      return { command: `ssh -p ${port || "22"} ${left}`, explanation: "Checks TCP/22 first, then opens a new PowerShell SSH session on the scanner host." };
+      const [host, port] = (value || "192.168.10.1:22").split(":");
+      return { command: `ssh -p ${port || "22"} ${sshTargetPreview(host)}`, explanation: "Connects through the local tools agent and displays the SSH session in the app." };
     }
     case "subnet":
       return { command: "No shell command required", explanation: "Calculates the common /24 range used by the current scanner workflow.", extra: calculate24(value || "192.168.10.42") };
@@ -189,6 +321,10 @@ function buildToolOutput(toolId: ToolId, rawValue: string): { command: string; e
     default:
       return { command: "", explanation: "" };
   }
+}
+
+function sshTargetPreview(host: string): string {
+  return host || "192.168.10.1";
 }
 
 function calculate24(ip: string): string {
@@ -215,6 +351,8 @@ const styles = StyleSheet.create({
   panelHeader: { flexDirection: "row", gap: 10, alignItems: "center", marginBottom: 12 },
   panelTitle: { color: "#f8fafc", fontWeight: "900", fontSize: 18 },
   input: { backgroundColor: "#020617", borderColor: "#1e293b", borderWidth: 1, borderRadius: 16, color: "#f8fafc", padding: 13, marginBottom: 12 },
+  sshGrid: { flexDirection: "row", gap: 10 },
+  sshHalfInput: { flex: 1 },
   sshNotice: { color: "#fde68a", backgroundColor: "#451a03", borderColor: "#78350f", borderWidth: 1, borderRadius: 16, padding: 12, lineHeight: 18, marginBottom: 12 },
   runButton: { height: 50, backgroundColor: "#2563eb", borderRadius: 18, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
   disabledButton: { opacity: 0.6 },
@@ -226,5 +364,14 @@ const styles = StyleSheet.create({
   resultBoxError: { borderColor: "#7f1d1d", backgroundColor: "#450a0a" },
   resultCommand: { color: "#f8fafc", fontWeight: "900", marginBottom: 8 },
   resultOutput: { color: "#cbd5e1", lineHeight: 19 },
+  terminalCard: { marginTop: 14, backgroundColor: "#020617", borderColor: "#1e293b", borderWidth: 1, borderRadius: 18, padding: 12 },
+  terminalHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 10 },
+  terminalTitle: { color: "#f8fafc", fontWeight: "900" },
+  terminalStatus: { color: "#67e8f9", fontWeight: "900" },
+  terminalOutput: { minHeight: 220, color: "#bbf7d0", fontFamily: "monospace", lineHeight: 18 },
+  commandRow: { flexDirection: "row", gap: 8, marginTop: 10 },
+  commandInput: { flex: 1, backgroundColor: "#030712", borderColor: "#1e293b", borderWidth: 1, borderRadius: 14, color: "#f8fafc", paddingHorizontal: 12 },
+  smallButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: "#2563eb", alignItems: "center", justifyContent: "center" },
+  stopButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: "#991b1b", alignItems: "center", justifyContent: "center" },
   body: { color: "#cbd5e1", lineHeight: 20 },
 });
