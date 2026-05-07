@@ -2,6 +2,7 @@ import {
   ChevronRight,
   ClipboardList,
   Globe,
+  KeyRound,
   Network,
   Play,
   Search,
@@ -35,6 +36,7 @@ const tools: Tool[] = [
   { id: "dns", name: "DNS Lookup", description: "Resolve hostname to IP", icon: Search, placeholder: "example.com", defaultValue: "example.com" },
   { id: "reverseDns", name: "Reverse DNS", description: "Resolve IP to hostname", icon: Search, placeholder: "192.168.10.1", defaultValue: "192.168.10.1" },
   { id: "portCheck", name: "Port Check", description: "Test a live TCP connection", icon: Wrench, placeholder: "192.168.10.1:443", defaultValue: "192.168.10.1:443" },
+  { id: "ssh", name: "SSH", description: "Open an SSH session on the scanner host", icon: KeyRound, placeholder: "admin@192.168.10.1:22", defaultValue: "admin@192.168.10.1:22" },
   { id: "subnet", name: "Subnet Calculator", description: "Calculate a common /24 range", icon: Network, placeholder: "192.168.10.42", defaultValue: "192.168.10.42" },
   { id: "publicIp", name: "Public IP", description: "Check public egress IP from scanner host", icon: Globe, placeholder: "", defaultValue: "" },
 ];
@@ -125,9 +127,15 @@ export default function ToolsScreen() {
           />
         )}
 
+        {selectedTool.id === "ssh" && (
+          <Text style={styles.sshNotice}>
+            SSH opens in a new PowerShell window on the Windows scanner host. Credentials stay in that terminal, not inside the app.
+          </Text>
+        )}
+
         <TouchableOpacity style={[styles.runButton, isRunning && styles.disabledButton]} onPress={runTool} disabled={isRunning}>
           <Play color="#fff" size={18} />
-          <Text style={styles.runButtonText}>{isRunning ? "Running..." : "Run Live Tool"}</Text>
+          <Text style={styles.runButtonText}>{isRunning ? "Running..." : selectedTool.id === "ssh" ? "Open SSH Session" : "Run Live Tool"}</Text>
         </TouchableOpacity>
 
         <Text style={styles.label}>Live result</Text>
@@ -169,6 +177,11 @@ function buildToolOutput(toolId: ToolId, rawValue: string): { command: string; e
       const [host, port] = (value || "192.168.10.1:443").split(":");
       return { command: `Test-NetConnection ${host || "192.168.10.1"} -Port ${port || "443"}`, explanation: "Verifies whether a specific TCP service is reachable from the scanner host." };
     }
+    case "ssh": {
+      const target = value || "admin@192.168.10.1:22";
+      const [left, port] = target.split(":");
+      return { command: `ssh -p ${port || "22"} ${left}`, explanation: "Checks TCP/22 first, then opens a new PowerShell SSH session on the scanner host." };
+    }
     case "subnet":
       return { command: "No shell command required", explanation: "Calculates the common /24 range used by the current scanner workflow.", extra: calculate24(value || "192.168.10.42") };
     case "publicIp":
@@ -202,6 +215,7 @@ const styles = StyleSheet.create({
   panelHeader: { flexDirection: "row", gap: 10, alignItems: "center", marginBottom: 12 },
   panelTitle: { color: "#f8fafc", fontWeight: "900", fontSize: 18 },
   input: { backgroundColor: "#020617", borderColor: "#1e293b", borderWidth: 1, borderRadius: 16, color: "#f8fafc", padding: 13, marginBottom: 12 },
+  sshNotice: { color: "#fde68a", backgroundColor: "#451a03", borderColor: "#78350f", borderWidth: 1, borderRadius: 16, padding: 12, lineHeight: 18, marginBottom: 12 },
   runButton: { height: 50, backgroundColor: "#2563eb", borderRadius: 18, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
   disabledButton: { opacity: 0.6 },
   runButtonText: { color: "#fff", fontWeight: "900", fontSize: 15 },
