@@ -1,11 +1,14 @@
 const http = require("http");
 const dns = require("dns").promises;
 const net = require("net");
-const { execFile, spawn } = require("child_process");
+const { execFile } = require("child_process");
+const { Client } = require("ssh2");
+const crypto = require("crypto");
 
 const PORT = Number(process.env.FIELDNET_TOOLS_PORT || 47892);
 const HOST = process.env.FIELDNET_TOOLS_HOST || "0.0.0.0";
-const VERSION = "0.2.0";
+const VERSION = "0.3.0";
+const SSH_SESSIONS = new Map();
 
 function send(res, statusCode, payload) {
   res.writeHead(statusCode, {
@@ -15,6 +18,22 @@ function send(res, statusCode, payload) {
     "Access-Control-Allow-Headers": "Content-Type",
   });
   res.end(JSON.stringify(payload, null, 2));
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("end", () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
 }
 
 function execText(command, args, timeoutMs) {
@@ -66,49 +85,171 @@ function calculate24(ip) {
 }
 
 function parseSshTarget(input) {
-  const value = String(input || "").trim() || "admin@192.168.10.1";
-  const [left, portText] = value.split(":");
-  const [maybeUser, maybeHost] = left.includes("@") ? left.split("@") : ["", left];
-  const username = maybeHost ? maybeUser : "";
-  const host = maybeHost || maybeUser;
-  const port = Number(portText || 22);
-
-  return { username, host, port };
+  const value = String(input || "").trim() || "192.168.10.1:22";
+  const [hostPart, portText] = value.split(":");
+  return {
+    host: hostPart,
+    port: Number(portText || 22),
+  };
 }
 
-async function openSshSession(input) {
-  const { username, host, port } = parseSshTarget(input);
-  const target = username ? `${username}@${host}` : host;
-  const sshArgs = ["-p", String(port), target];
+async function startSshSession({ target, username, password }) {
+  const { host, port } = parseSshTarget(target);
+  const user = String(username || "").trim();
+  const pass = String(password || "");
+
+  if (!host || !user || !pass) {
+    return {
+      ok: false,
+      command: "ssh",
+      output: "Host, username, and password are required. Credentials are kept in memory only and are not written to disk.",
+    };
+  }
 
   const reachable = await tcpCheck(host, port, 1800);
   if (!reachable.ok) {
     return {
       ok: false,
-      command: `ssh -p ${port} ${target}`,
-      output: `SSH port check failed before launch. ${reachable.output}`,
+      command: `ssh -p ${port} ${user}@${host}`,
+      output: `SSH port check failed before connection. ${reachable.output}`,
     };
   }
 
-  if (process.platform === "win32") {
-    const psCommand = `Start-Process powershell -ArgumentList '-NoExit','-Command','ssh -p ${port} ${target}'`;
-    const result = await execText("powershell.exe", ["-NoProfile", "-Command", psCommand], 3000);
+  return new Promise((resolve) => {
+    const sessionId = crypto.randomUUID();
+    const conn = new Client();
+    const buffer = [];
+    let running = true;
+    let shell = null;
+    let settled = false;
+
+    function append(data) {
+      buffer.push(String(data));
+      if (buffer.join("").length > 30000) {
+        const trimmed = buffer.join("").slice(-30000);
+        buffer.length = 0;
+        buffer.push(trimmed);
+      }
+    }
+
+    function fail(message) {
+      if (settled) return;
+      settled = true;
+      try {
+        conn.end();
+      } catch {}
+      resolve({
+        ok: false,
+        command: `ssh -p ${port} ${user}@${host}`,
+        output: message,
+      });
+    }
+
+    const timeout = setTimeout(() => fail("SSH connection timed out."), 12000);
+
+    conn
+      .on("ready", () => {
+        conn.shell({ term: "xterm-color", cols: 100, rows: 32 }, (error, stream) => {
+          clearTimeout(timeout);
+          if (error) {
+            fail(error.message);
+            return;
+          }
+
+          shell = stream;
+          stream.on("data", (data) => append(data.toString("utf8")));
+          stream.stderr?.on("data", (data) => append(data.toString("utf8")));
+          stream.on("close", () => {
+            running = false;
+            append("\n[SSH session closed]\n");
+          });
+
+          SSH_SESSIONS.set(sessionId, {
+            conn,
+            shell,
+            buffer,
+            running,
+            createdAt: Date.now(),
+            command: `ssh -p ${port} ${user}@${host}`,
+            host,
+            port,
+            username: user,
+          });
+
+          settled = true;
+          resolve({
+            ok: true,
+            sessionId,
+            command: `ssh -p ${port} ${user}@${host}`,
+            output: `Connected to ${user}@${host}:${port}.`,
+          });
+        });
+      })
+      .on("error", (error) => {
+        clearTimeout(timeout);
+        fail(error.message);
+      })
+      .on("close", () => {
+        const session = SSH_SESSIONS.get(sessionId);
+        if (session) session.running = false;
+      })
+      .connect({
+        host,
+        port,
+        username: user,
+        password: pass,
+        readyTimeout: 10000,
+        tryKeyboard: false,
+        algorithms: {
+          serverHostKey: ["ssh-ed25519", "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp521", "rsa-sha2-512", "rsa-sha2-256", "ssh-rsa"],
+        },
+      });
+  });
+}
+
+function sendSshInput({ sessionId, input }) {
+  const session = SSH_SESSIONS.get(sessionId);
+  if (!session || !session.shell) return { ok: false };
+
+  session.shell.write(String(input || ""));
+  return { ok: true };
+}
+
+function readSshOutput({ sessionId }) {
+  const session = SSH_SESSIONS.get(sessionId);
+  if (!session) {
     return {
-      ok: result.ok,
-      command: `ssh -p ${port} ${target}`,
-      output: result.ok
-        ? `Opened a new PowerShell SSH session to ${target}:${port} on the scanner host.`
-        : `Could not open SSH session. ${result.output}`,
+      ok: false,
+      sessionId,
+      output: "SSH session not found.",
+      running: false,
+      exitCode: null,
     };
   }
 
-  const child = spawn("ssh", sshArgs, { detached: true, stdio: "ignore" });
-  child.unref();
+  const output = session.buffer.join("");
+  session.buffer.length = 0;
+
   return {
     ok: true,
-    command: `ssh -p ${port} ${target}`,
-    output: `Started SSH process to ${target}:${port} on the scanner host.`,
+    sessionId,
+    output,
+    running: Boolean(session.running),
+    exitCode: null,
   };
+}
+
+function stopSshSession({ sessionId }) {
+  const session = SSH_SESSIONS.get(sessionId);
+  if (!session) return { ok: false };
+
+  try {
+    session.shell?.end("exit\n");
+    session.conn?.end();
+  } catch {}
+
+  SSH_SESSIONS.delete(sessionId);
+  return { ok: true };
 }
 
 async function runTool(tool, value) {
@@ -167,13 +308,17 @@ async function runTool(tool, value) {
   }
 
   if (tool === "ssh") {
-    return openSshSession(input);
+    return {
+      ok: true,
+      command: "In-app SSH terminal",
+      output: "Use the SSH section to connect. It opens an interactive terminal inside the app through the tools agent.",
+    };
   }
 
   return { ok: false, command: "Unknown tool", output: `Unsupported tool: ${tool}` };
 }
 
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") return send(res, 200, { ok: true });
 
   if (req.url === "/health") {
@@ -182,23 +327,54 @@ const server = http.createServer((req, res) => {
       name: "fieldnet-tools-agent",
       version: VERSION,
       tools: ["ping", "traceroute", "dns", "reverseDns", "portCheck", "subnet", "publicIp", "ssh"],
+      ssh: "interactive",
     });
   }
 
   if (req.url === "/tools/run" && req.method === "POST") {
-    let body = "";
-    req.on("data", (chunk) => {
-      body += chunk;
-    });
-    req.on("end", async () => {
-      try {
-        const payload = body ? JSON.parse(body) : {};
-        const result = await runTool(payload.tool, payload.value);
-        send(res, 200, { tool: payload.tool, ...result });
-      } catch (error) {
-        send(res, 500, { error: error instanceof Error ? error.message : String(error) });
-      }
-    });
+    try {
+      const payload = await readBody(req);
+      const result = await runTool(payload.tool, payload.value);
+      send(res, 200, { tool: payload.tool, ...result });
+    } catch (error) {
+      send(res, 500, { error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
+  if (req.url === "/ssh/start" && req.method === "POST") {
+    try {
+      send(res, 200, await startSshSession(await readBody(req)));
+    } catch (error) {
+      send(res, 500, { error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
+  if (req.url === "/ssh/input" && req.method === "POST") {
+    try {
+      send(res, 200, sendSshInput(await readBody(req)));
+    } catch (error) {
+      send(res, 500, { error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
+  if (req.url === "/ssh/output" && req.method === "POST") {
+    try {
+      send(res, 200, readSshOutput(await readBody(req)));
+    } catch (error) {
+      send(res, 500, { error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
+  if (req.url === "/ssh/stop" && req.method === "POST") {
+    try {
+      send(res, 200, stopSshSession(await readBody(req)));
+    } catch (error) {
+      send(res, 500, { error: error instanceof Error ? error.message : String(error) });
+    }
     return;
   }
 
@@ -207,5 +383,5 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`FieldNet tools agent v${VERSION} listening on http://${HOST}:${PORT}`);
-  console.log("Endpoints: /health, POST /tools/run");
+  console.log("Endpoints: /health, POST /tools/run, POST /ssh/start, POST /ssh/input, POST /ssh/output, POST /ssh/stop");
 });
