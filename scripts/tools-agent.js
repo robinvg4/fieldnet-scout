@@ -1,11 +1,11 @@
 const http = require("http");
 const dns = require("dns").promises;
 const net = require("net");
-const { execFile } = require("child_process");
+const { execFile, spawn } = require("child_process");
 
 const PORT = Number(process.env.FIELDNET_TOOLS_PORT || 47892);
 const HOST = process.env.FIELDNET_TOOLS_HOST || "0.0.0.0";
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 
 function send(res, statusCode, payload) {
   res.writeHead(statusCode, {
@@ -65,6 +65,52 @@ function calculate24(ip) {
   return [`Network: ${prefix}.0/24`, `Usable range: ${prefix}.1 - ${prefix}.254`, `Broadcast: ${prefix}.255`, "Mask: 255.255.255.0"].join("\n");
 }
 
+function parseSshTarget(input) {
+  const value = String(input || "").trim() || "admin@192.168.10.1";
+  const [left, portText] = value.split(":");
+  const [maybeUser, maybeHost] = left.includes("@") ? left.split("@") : ["", left];
+  const username = maybeHost ? maybeUser : "";
+  const host = maybeHost || maybeUser;
+  const port = Number(portText || 22);
+
+  return { username, host, port };
+}
+
+async function openSshSession(input) {
+  const { username, host, port } = parseSshTarget(input);
+  const target = username ? `${username}@${host}` : host;
+  const sshArgs = ["-p", String(port), target];
+
+  const reachable = await tcpCheck(host, port, 1800);
+  if (!reachable.ok) {
+    return {
+      ok: false,
+      command: `ssh -p ${port} ${target}`,
+      output: `SSH port check failed before launch. ${reachable.output}`,
+    };
+  }
+
+  if (process.platform === "win32") {
+    const psCommand = `Start-Process powershell -ArgumentList '-NoExit','-Command','ssh -p ${port} ${target}'`;
+    const result = await execText("powershell.exe", ["-NoProfile", "-Command", psCommand], 3000);
+    return {
+      ok: result.ok,
+      command: `ssh -p ${port} ${target}`,
+      output: result.ok
+        ? `Opened a new PowerShell SSH session to ${target}:${port} on the scanner host.`
+        : `Could not open SSH session. ${result.output}`,
+    };
+  }
+
+  const child = spawn("ssh", sshArgs, { detached: true, stdio: "ignore" });
+  child.unref();
+  return {
+    ok: true,
+    command: `ssh -p ${port} ${target}`,
+    output: `Started SSH process to ${target}:${port} on the scanner host.`,
+  };
+}
+
 async function runTool(tool, value) {
   const input = String(value || "").trim();
 
@@ -120,6 +166,10 @@ async function runTool(tool, value) {
     }
   }
 
+  if (tool === "ssh") {
+    return openSshSession(input);
+  }
+
   return { ok: false, command: "Unknown tool", output: `Unsupported tool: ${tool}` };
 }
 
@@ -131,7 +181,7 @@ const server = http.createServer((req, res) => {
       ok: true,
       name: "fieldnet-tools-agent",
       version: VERSION,
-      tools: ["ping", "traceroute", "dns", "reverseDns", "portCheck", "subnet", "publicIp"],
+      tools: ["ping", "traceroute", "dns", "reverseDns", "portCheck", "subnet", "publicIp", "ssh"],
     });
   }
 
